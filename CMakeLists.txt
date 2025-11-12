@@ -15,9 +15,5 @@ endif()
 include_directories(${CMAKE_SOURCE_DIR}/beacon/)
 
 add_subdirectory(beacon)
-add_subdirectory(loader)
-add_subdirectory(tiny-pe)
-add_subdirectory(c-pe)
-add_subdirectory(cpp-pe)
 
-install(TARGETS beacon loader tiny-pe c-pe cpp-pe DESTINATION "")
+install(TARGETS beacon DESTINATION "")
