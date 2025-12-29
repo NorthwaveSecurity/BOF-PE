@@ -15,5 +15,6 @@ endif()
 include_directories(${CMAKE_SOURCE_DIR}/beacon/)
 
 add_subdirectory(beacon)
+add_subdirectory(ldapsearch)
 
-install(TARGETS beacon DESTINATION "")
+install(TARGETS beacon ldapsearch DESTINATION "")
