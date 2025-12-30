@@ -248,21 +248,24 @@ void customAttributes(PCHAR pAttribute, PCHAR pValue)
         UuidToStringA((UUID *) tmp->bv_val, &G);
         BeaconPrintf(CALLBACK_OUTPUT, "%s", G);
         RpcStringFreeA(&G);
-    } else if (strcmp(pAttribute, "pKIExpirationPeriod") == 0 
-            || strcmp(pAttribute, "pKIOverlapPeriod") == 0 
+    } else if ( strcmp(pAttribute, "attributeSecurityGUID") == 0 
+             || strcmp(pAttribute, "auditingPolicy") == 0 
+             || strcmp(pAttribute, "authorityRevocationList") == 0 
             || strcmp(pAttribute, "cACertificate") == 0 
-            || strcmp(pAttribute, "nTSecurityDescriptor") == 0 
-            || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 
-            || strcmp(pAttribute, "msDS-GenerationId") == 0 
-            || strcmp(pAttribute, "auditingPolicy") == 0 
+             || strcmp(pAttribute, "certificateRevocationList") == 0 
             || strcmp(pAttribute, "dSASignature") == 0 
+             || strcmp(pAttribute, "logonHours") == 0 
             || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 
-            || strcmp(pAttribute, "logonHours") == 0 
-            || strcmp(pAttribute, "schemaIDGUID") == 0 
             || strcmp(pAttribute, "mSMQDigests") == 0 
             || strcmp(pAttribute, "mSMQSignCertificates") == 0 
+             || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 
+             || strcmp(pAttribute, "msDS-GenerationId") == 0 
+             || strcmp(pAttribute, "nTSecurityDescriptor") == 0 
+             || strcmp(pAttribute, "pKIExpirationPeriod") == 0 
+             || strcmp(pAttribute, "pKIKeyUsage") == 0 
+             || strcmp(pAttribute, "pKIOverlapPeriod") == 0 
+             || strcmp(pAttribute, "schemaIDGUID") == 0 
             || strcmp(pAttribute, "userCertificate") == 0 
-            || strcmp(pAttribute, "attributeSecurityGUID") == 0  
     ) {
 		char *encoded = NULL;
 		PBERVAL tmp = (PBERVAL)pValue;
