@@ -14,7 +14,7 @@
 #include <stdlib.h>
 
 #define MAX_ATTRIBUTES 100
-#define PAGE_SIZE 1
+#define PAGE_SIZE 500
 #define TIMEOUT 15
 
 void print_ldap_error(const char *location, ULONG error) {
@@ -83,89 +83,6 @@ PLDAPControlA FormatSDFlags(int iFlagValue) {
 }
 
 // https://github.com/macosforge/dss/blob/master/CommonUtilitiesLib/base64.c
-
-/* aaaack but it's fast and const should make it shared text page. */
-static const unsigned char pr2six[256] =
-{
-    /* ASCII table */
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63,
-    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
-    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
-    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64,
-    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
-};
-
-int Base64decode_len(const char *bufcoded)
-{
-    int nbytesdecoded;
-    const unsigned char *bufin;
-    int nprbytes;
-
-    bufin = (const unsigned char *) bufcoded;
-    while (pr2six[*(bufin++)] <= 63);
-
-    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
-    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
-
-    return nbytesdecoded + 1;
-}
-
-int Base64decode(char *bufplain, const char *bufcoded)
-{
-    int nbytesdecoded;
-    const unsigned char *bufin;
-    unsigned char *bufout;
-    int nprbytes;
-
-    bufin = (const unsigned char *) bufcoded;
-    while (pr2six[*(bufin++)] <= 63);
-    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
-    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
-
-    bufout = (unsigned char *) bufplain;
-    bufin = (const unsigned char *) bufcoded;
-
-    while (nprbytes > 4) {
-    *(bufout++) =
-        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
-    bufin += 4;
-    nprbytes -= 4;
-    }
-
-    /* Note: (nprbytes == 1) would be an error, so just ingore that case */
-    if (nprbytes > 1) {
-    *(bufout++) =
-        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
-    }
-    if (nprbytes > 2) {
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
-    }
-    if (nprbytes > 3) {
-    *(bufout++) =
-        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
-    }
-
-    *(bufout++) = '\0';
-    nbytesdecoded -= (4 - nprbytes) & 3;
-    return nbytesdecoded;
-}
-
 static const char basis_64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -198,16 +115,6 @@ int Base64encode(char* encoded, const char* string, int len) {
 
 	*p++ = '\0';
 	return p - encoded;
-}
-
-void print_cookie(PBERVAL cookie) {
-	char *encoded = (char *)malloc((size_t)cookie->bv_len*2);
-    if (encoded == NULL) {
-        BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
-        return;
-    }
-    Base64encode(encoded, cookie->bv_val, cookie->bv_len);
-    BeaconPrintf(CALLBACK_OUTPUT, "Cookie for next page: %s\n", encoded);
 }
 
 LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName, BOOL ldaps){
@@ -373,7 +280,7 @@ void printAttribute(PCHAR pAttribute, PBERVAL *ppValue){
     }
 }
 
-void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count, ULONG scope_of_search, char * hostname, char * domain, BOOL ldaps, PBERVAL initCookie){
+void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count, ULONG scope_of_search, char * hostname, char * domain, BOOL ldaps){
     char szDN[1024] = {0};
 	ULONG ulSize = sizeof(szDN)/sizeof(szDN[0]);
 	
@@ -437,7 +344,6 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
     if(!pLdapConnection)
         {goto end;}
 
-
 	//////////////////////////////
 	// Perform LDAP Search
 	//////////////////////////////
@@ -449,15 +355,16 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
     ULONG returnCode = LDAP_SUCCESS;
     DWORD numberOfEntries = 0;
     PBERVAL cookie = NULL;
-    if (initCookie->bv_val != NULL) {
-        cookie = initCookie;
-    }
     PLDAPMessage message = NULL;
     BOOL moreResults = TRUE;
     BOOL done = FALSE;
+    ULONG page_size = PAGE_SIZE;
+    if (results_count > 0 && results_count < PAGE_SIZE) {
+        page_size = results_count;
+    }
     do
     {
-        error = ldap_create_page_control(pLdapConnection, PAGE_SIZE, cookie, FALSE, &serverControls[0]);
+        error = ldap_create_page_control(pLdapConnection, page_size, cookie, FALSE, &serverControls[0]);
         if (error != LDAP_SUCCESS) {
             print_ldap_error("ldap_create_page_control", error);
             goto end;
@@ -513,10 +420,6 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
         }
 
         moreResults = cookie != NULL && cookie->bv_val != NULL && cookie->bv_len > 0;
-        if (moreResults) {
-            BeaconPrintf(CALLBACK_OUTPUT, "\n--------------------\n");
-            print_cookie(cookie);
-        }
 
         if (numberOfEntries == 0) {
             numberOfEntries = ldap_count_entries(pLdapConnection, message);
@@ -579,7 +482,6 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
             ldap_msgfree(message); 
             message = NULL;
         }
-        break;
 
     }while(moreResults && !done);
 
@@ -642,8 +544,6 @@ extern "C" __declspec(dllexport) void go(const char* Buffer, int Length){
 	ULONG results_count;
     ULONG scope_of_search;
     ULONG ldaps;
-    char * cookie;
-    berval cookie_bv = {0, NULL};
 
 	BeaconDataParse(&parser, (char *)Buffer, Length);
 	ldap_filter = BeaconDataExtract(&parser, NULL);
@@ -653,21 +553,10 @@ extern "C" __declspec(dllexport) void go(const char* Buffer, int Length){
     hostname = BeaconDataExtract(&parser, NULL);
     domain = BeaconDataExtract(&parser, NULL);
     ldaps = BeaconDataInt(&parser);
-    cookie = BeaconDataExtract(&parser, NULL);
 
     ldap_attributes = *ldap_attributes == 0 ? NULL : ldap_attributes;
     hostname = *hostname == 0 ? NULL : hostname;
     domain = *domain == 0 ? NULL : domain;
-
-    if (*cookie != 0) {
-        cookie_bv.bv_len = Base64decode_len(cookie);
-        cookie_bv.bv_val = (char *) malloc(cookie_bv.bv_len);
-        if (cookie_bv.bv_val == NULL) {
-            BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
-            return;
-        }
-        Base64decode(cookie_bv.bv_val, cookie);
-    }
 
     BeaconPrintf(CALLBACK_OUTPUT, "[*] Filter: %s\n",ldap_filter);
     BeaconPrintf(CALLBACK_OUTPUT, "[*] Scope of search value: %lu\n",scope_of_search);
@@ -682,13 +571,10 @@ extern "C" __declspec(dllexport) void go(const char* Buffer, int Length){
         scope_of_search = LDAP_SCOPE_SUBTREE;
     }
 
-	ldapSearch(ldap_filter, ldap_attributes, results_count, scope_of_search, hostname, domain, ldaps==1, &cookie_bv);
+	ldapSearch(ldap_filter, ldap_attributes, results_count, scope_of_search, hostname, domain, ldaps==1);
 
-    if (cookie_bv.bv_val != NULL) {
-        free(cookie_bv.bv_val);
-    }
 }
 
 //A helper macro that will declare main inside the .discard section
 //and invoke BeaconInvokeStandalone with the expected packed argument format  
-BEACON_MAIN("zziizziz", go)
+BEACON_MAIN("zziizzi", go)
