@@ -227,33 +227,33 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
 
    	if (aclSearch) {
 		pSearchResult = ldap_search_init_pageA(
-		pLdapConnection,    // Session handle
-		distinguishedName,  // DN to start search
-		scope, // Scope
-		ldap_filter,        // Filter
+		pLdapConnection,                     // Session handle
+		distinguishedName,                   // DN to start search
+		scope,                               // Scope
+		ldap_filter,                         // Filter
 		(*attr) ? attr : NULL,               // Retrieve list of attributes
-		0,                  // Get both attributes and values
+		0,                                   // Get both attributes and values
 		serverControls,
 		NULL,
 		15,
 		maxResults,
-		NULL);    // [out] Search results
+		NULL);
 		
 		free(serverControls[0]->ldctl_value.bv_val);
 		free(serverControls[0]);
 	} else {
 		pSearchResult = ldap_search_init_pageA(
-		pLdapConnection,    // Session handle
-		distinguishedName,  // DN to start search
-		scope, // Scope
-		ldap_filter,        // Filter
+		pLdapConnection,                     // Session handle
+		distinguishedName,                   // DN to start search
+		scope,                               // Scope
+		ldap_filter,                         // Filter
 		(*attr) ? attr : NULL,               // Retrieve list of attributes
-		0,                  // Get both attributes and values
+		0,                                   // Get both attributes and values
 		NULL,
 		NULL,
 		15,
 		maxResults,
-		NULL);    // [out] Search results
+		NULL);
 	}
     
     if (pSearchResult == NULL) 
