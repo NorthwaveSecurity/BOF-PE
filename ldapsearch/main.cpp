@@ -238,26 +238,24 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
 
 }
 
-void customAttributes(PCHAR pAttribute, PCHAR pValue)
+void customAttributes(PCHAR pAttribute, PBERVAL pValue)
 {
     if(strcmp(pAttribute, "objectGUID") == 0) 
     {
         RPC_CSTR G = NULL;
-        PBERVAL tmp = (PBERVAL)pValue;
-        //UuidToStringA((UUID *) tmp->bv_val, &G);
-        UuidToStringA((UUID *) tmp->bv_val, &G);
+        UuidToStringA((UUID *) pValue->bv_val, &G);
         BeaconPrintf(CALLBACK_OUTPUT, "%s", G);
         RpcStringFreeA(&G);
     } else if ( strcmp(pAttribute, "attributeSecurityGUID") == 0 
              || strcmp(pAttribute, "auditingPolicy") == 0 
              || strcmp(pAttribute, "authorityRevocationList") == 0 
-            || strcmp(pAttribute, "cACertificate") == 0 
+             || strcmp(pAttribute, "cACertificate") == 0 
              || strcmp(pAttribute, "certificateRevocationList") == 0 
-            || strcmp(pAttribute, "dSASignature") == 0 
+             || strcmp(pAttribute, "dSASignature") == 0 
              || strcmp(pAttribute, "logonHours") == 0 
-            || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 
-            || strcmp(pAttribute, "mSMQDigests") == 0 
-            || strcmp(pAttribute, "mSMQSignCertificates") == 0 
+             || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 
+             || strcmp(pAttribute, "mSMQDigests") == 0 
+             || strcmp(pAttribute, "mSMQSignCertificates") == 0 
              || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 
              || strcmp(pAttribute, "msDS-GenerationId") == 0 
              || strcmp(pAttribute, "nTSecurityDescriptor") == 0 
@@ -265,33 +263,31 @@ void customAttributes(PCHAR pAttribute, PCHAR pValue)
              || strcmp(pAttribute, "pKIKeyUsage") == 0 
              || strcmp(pAttribute, "pKIOverlapPeriod") == 0 
              || strcmp(pAttribute, "schemaIDGUID") == 0 
-            || strcmp(pAttribute, "userCertificate") == 0 
+             || strcmp(pAttribute, "userCertificate") == 0
     ) {
 		char *encoded = NULL;
-		PBERVAL tmp = (PBERVAL)pValue;
-		ULONG len = tmp->bv_len;
+		ULONG len = pValue->bv_len;
 		encoded = (char *)malloc((size_t)len*2);
-		Base64encode(encoded, (char *)tmp->bv_val, len);
+		Base64encode(encoded, (char *)pValue->bv_val, len);
 		BeaconPrintf(CALLBACK_OUTPUT, "%s", encoded);
 		free(encoded);
 	}
     else if(strcmp(pAttribute, "objectSid") == 0 || strcmp(pAttribute, "securityIdentifier") == 0)
     {
         LPSTR sid = NULL;
-		//BeaconPrintf(CALLBACK_OUTPUT, "len of objectSID: %d\n", strlen(pValue));
-        PBERVAL tmp = (PBERVAL)pValue;
-        ConvertSidToStringSidA((PSID)tmp->bv_val, &sid);
+        ConvertSidToStringSidA((PSID)pValue->bv_val, &sid);
         BeaconPrintf(CALLBACK_OUTPUT, "%s", sid);
         LocalFree(sid);
     }
     else
     {
-        BeaconPrintf(CALLBACK_OUTPUT, "%s", pValue);
+        //The strings are not always NULL-terminated, so limit the length
+        BeaconPrintf(CALLBACK_OUTPUT, "%.*s", pValue->bv_len, pValue->bv_val);
     }
     
 }
 
-void printAttribute(PCHAR pAttribute, PCHAR* ppValue){
+void printAttribute(PCHAR pAttribute, PBERVAL *ppValue){
     BeaconPrintf(CALLBACK_OUTPUT, "\n%s: ", pAttribute);
     customAttributes(pAttribute, *ppValue);
     ppValue++;
@@ -324,7 +320,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
     LDAP_TIMEVAL timeout = {20, 0};
     ULONG iCnt = 0;
     PCHAR pAttribute = NULL;
-    PCHAR* ppValue = NULL;
+    PBERVAL* ppValue = NULL;
     ULONG results_limit = 0;
     BOOL isbinary = FALSE;
     ULONG stat = 0;
@@ -417,37 +413,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                 pAttribute = ldap_next_attribute(pLdapConnection, pEntry, pBer)           
             )
             {
-                isbinary = FALSE;
-                // Get the string values.
-                if(strcmp(pAttribute, "pKIExpirationPeriod") == 0 
-                || strcmp(pAttribute, "pKIOverlapPeriod") == 0 
-                || strcmp(pAttribute, "cACertificate") == 0 
-                || strcmp(pAttribute, "objectSid") == 0 
-                || strcmp(pAttribute, "securityIdentifier") == 0 
-                || strcmp(pAttribute, "objectGUID") == 0 
-                || strcmp(pAttribute, "nTSecurityDescriptor") == 0 
-                || strcmp(pAttribute, "msDS-GenerationId") == 0 
-                || strcmp(pAttribute, "auditingPolicy") == 0 
-                || strcmp(pAttribute, "dSASignature") == 0 
-                || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 
-                || strcmp(pAttribute, "logonHours") == 0 
-                || strcmp(pAttribute, "schemaIDGUID") == 0 
-                || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 
-                || strcmp(pAttribute, "msDS-GenerationId") == 0 
-                || strcmp(pAttribute, "mSMQDigests") == 0 
-                || strcmp(pAttribute, "mSMQSignCertificates") == 0 
-                || strcmp(pAttribute, "userCertificate") == 0 
-                || strcmp(pAttribute, "attributeSecurityGUID") == 0  )
-                {
-					//BeaconPrintf(CALLBACK_OUTPUT, "\n%s\n", pAttribute);
-                    ppValue = (char **)ldap_get_values_lenA(pLdapConnection, pEntry, pAttribute); //not really a char **
-                    isbinary = TRUE;
-				} else {
-                    ppValue = ldap_get_values(
-                                pLdapConnection,  // Session Handle
-                                pEntry,           // Current entry
-                                pAttribute);      // Current attribute
-                }
+                ppValue = ldap_get_values_lenA(pLdapConnection, pEntry, pAttribute);
                 if (ppValue == NULL) {
                     error = LdapGetLastError();
                     if (error != LDAP_SUCCESS) {
@@ -456,10 +422,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                     }
                 } else {
                     printAttribute(pAttribute, ppValue);
-                    if(isbinary)
-                    {ldap_value_free_len((PBERVAL *)ppValue);}
-                    else
-                    {ldap_value_free(ppValue);}
+                    ldap_value_free_len((PBERVAL *)ppValue);
                     ppValue = NULL;
                 }
                 ldap_memfree(pAttribute);
@@ -518,10 +481,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
     }
     if (ppValue)
     {
-        if(isbinary)
-        {ldap_value_free_len((PBERVAL *)ppValue);}
-        else
-        {ldap_value_free(ppValue);}
+        ldap_value_free_len((PBERVAL *)ppValue);
         ppValue = NULL;
     }    
 
