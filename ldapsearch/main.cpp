@@ -14,9 +14,11 @@
 #include <stdlib.h>
 
 #define MAX_ATTRIBUTES 100
+#define PAGE_SIZE 1
+#define TIMEOUT 15
 
-void print_ldap_error(ULONG error) {
-    BeaconPrintf(CALLBACK_ERROR, "LDAP error %lu: %s\n", error, ldap_err2string(error));
+void print_ldap_error(const char *location, ULONG error) {
+    BeaconPrintf(CALLBACK_ERROR, "LDAP error %lu from %s: %s\n", error, location, ldap_err2string(error));
 }
 
 BOOLEAN _cdecl ServerCertCallback (PLDAP Connection, PCCERT_CONTEXT pServerCert)
@@ -80,7 +82,90 @@ PLDAPControlA FormatSDFlags(int iFlagValue) {
     
 }
 
-// https://opensource.apple.com/source/QuickTimeStreamingServer/QuickTimeStreamingServer-452/CommonUtilitiesLib/base64.c.auto.html
+// https://github.com/macosforge/dss/blob/master/CommonUtilitiesLib/base64.c
+
+/* aaaack but it's fast and const should make it shared text page. */
+static const unsigned char pr2six[256] =
+{
+    /* ASCII table */
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63,
+    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
+    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64,
+    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
+};
+
+int Base64decode_len(const char *bufcoded)
+{
+    int nbytesdecoded;
+    const unsigned char *bufin;
+    int nprbytes;
+
+    bufin = (const unsigned char *) bufcoded;
+    while (pr2six[*(bufin++)] <= 63);
+
+    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
+    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
+
+    return nbytesdecoded + 1;
+}
+
+int Base64decode(char *bufplain, const char *bufcoded)
+{
+    int nbytesdecoded;
+    const unsigned char *bufin;
+    unsigned char *bufout;
+    int nprbytes;
+
+    bufin = (const unsigned char *) bufcoded;
+    while (pr2six[*(bufin++)] <= 63);
+    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
+    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
+
+    bufout = (unsigned char *) bufplain;
+    bufin = (const unsigned char *) bufcoded;
+
+    while (nprbytes > 4) {
+    *(bufout++) =
+        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
+    *(bufout++) =
+        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
+    *(bufout++) =
+        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
+    bufin += 4;
+    nprbytes -= 4;
+    }
+
+    /* Note: (nprbytes == 1) would be an error, so just ingore that case */
+    if (nprbytes > 1) {
+    *(bufout++) =
+        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
+    }
+    if (nprbytes > 2) {
+    *(bufout++) =
+        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
+    }
+    if (nprbytes > 3) {
+    *(bufout++) =
+        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
+    }
+
+    *(bufout++) = '\0';
+    nbytesdecoded -= (4 - nprbytes) & 3;
+    return nbytesdecoded;
+}
+
 static const char basis_64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -115,6 +200,16 @@ int Base64encode(char* encoded, const char* string, int len) {
 	return p - encoded;
 }
 
+void print_cookie(PBERVAL cookie) {
+	char *encoded = (char *)malloc((size_t)cookie->bv_len*2);
+    if (encoded == NULL) {
+        BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
+        return;
+    }
+    Base64encode(encoded, cookie->bv_val, cookie->bv_len);
+    BeaconPrintf(CALLBACK_OUTPUT, "Cookie for next page: %s\n", encoded);
+}
+
 LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName, BOOL ldaps){
 	LDAP* pLdapConnection = NULL;
 
@@ -124,10 +219,14 @@ LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName, BOOL lda
     pLdapConnection = ldap_init(hostName, portNumber);
     if (pLdapConnection == NULL)
     {
-        print_ldap_error(LdapGetLastError());
+        print_ldap_error("ldap_init", LdapGetLastError());
       	BeaconPrintf(CALLBACK_ERROR,"Failed to establish LDAP connection on %d.", portNumber);
         return NULL;
     }
+
+    // Without disabling this option only the first page is returned
+    result = ldap_set_optionW(pLdapConnection, LDAP_OPT_REFERRALS, LDAP_OPT_OFF);
+    if (result != LDAP_SUCCESS){goto handle_set_error;}
 
     if(ldaps){
 
@@ -146,13 +245,7 @@ LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName, BOOL lda
         if (result != LDAP_SUCCESS){goto handle_set_error;}
 
         result = ldap_set_optionW(pLdapConnection, LDAP_OPT_SERVER_CERTIFICATE, (void*)&ServerCertCallback ); //LDAP_OPT_SERVER_CERTIFICATE
-        if (result != LDAP_SUCCESS) {
-            handle_set_error:
-            BeaconPrintf(CALLBACK_ERROR, "LDAPS connection failed\n");
-            print_ldap_error(result);
-            ldap_unbind(pLdapConnection);
-            return NULL;
-        }
+        if (result != LDAP_SUCCESS) {goto handle_set_error;}
 	}
     
 	//////////////////////////////
@@ -167,27 +260,20 @@ LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName, BOOL lda
     if(result != LDAP_SUCCESS)
     {
     	BeaconPrintf(CALLBACK_ERROR, "Bind Failed\n");
-        print_ldap_error(result);
+        print_ldap_error("ldap_bind_s",result);
         ldap_unbind(pLdapConnection);
         pLdapConnection = NULL; 
     }
     return pLdapConnection;
+handle_set_error:
+    BeaconPrintf(CALLBACK_ERROR, "LDAPS connection failed\n");
+    print_ldap_error("ldap_set_optionW", result);
+    ldap_unbind(pLdapConnection);
+    return NULL;
 }
 
-PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, char * ldap_filter, char * ldap_attributes, ULONG maxResults, ULONG scope_of_search){
-    BeaconPrintf(CALLBACK_OUTPUT, "[*] Filter: %s\n",ldap_filter);
-    BeaconPrintf(CALLBACK_OUTPUT, "[*] Scope of search value: %lu\n",scope_of_search);
-
-	// Security descriptor flags to read nTSecurityDescriptor as low-priv domain user
-	// value taken from https://github.com/fortalice/pyldapsearch/blob/main/pyldapsearch/__main__.py (Microsoft docs mentioned XORing all possible values to get this, but that didn't work)
+void InitAttributes(char *ldap_attributes, PCHAR *attr, PLDAPControlA *serverControls) {
 	int sdFlags = 0x07;
-	PLDAPControlA serverControls[2];
-	int aclSearch = 0;
-    ULONG scope;
-
-    ULONG errorCode = LDAP_SUCCESS;
-    PLDAPSearch pSearchResult = NULL;
-    PCHAR attr[MAX_ATTRIBUTES] = {0};
 	if(ldap_attributes){
         BeaconPrintf(CALLBACK_OUTPUT, "[*] Returning specific attribute(s): %s\n",ldap_attributes);
         
@@ -199,9 +285,8 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
 
         while( token != NULL ) {
 			if (_stricmp(token, "nTSecurityDescriptor") == 0) {
-				serverControls[0] = FormatSDFlags(sdFlags);
-				serverControls[1] = NULL;
-				aclSearch = 1;
+				serverControls[1] = FormatSDFlags(sdFlags);
+				serverControls[2] = NULL;
 			}
             if(attribute_count < (MAX_ATTRIBUTES - 1)){
                 attr[attribute_count] = token;
@@ -213,56 +298,6 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
             }
         }
     }
-
-    if (scope_of_search == 1){
-        scope = LDAP_SCOPE_BASE;
-    } 
-    else if (scope_of_search == 2){
-        scope = LDAP_SCOPE_ONELEVEL;
-    }
-    else if (scope_of_search == 3){
-        scope = LDAP_SCOPE_SUBTREE;
-    }
-    
-
-   	if (aclSearch) {
-		pSearchResult = ldap_search_init_pageA(
-		pLdapConnection,                     // Session handle
-		distinguishedName,                   // DN to start search
-		scope,                               // Scope
-		ldap_filter,                         // Filter
-		(*attr) ? attr : NULL,               // Retrieve list of attributes
-		0,                                   // Get both attributes and values
-		serverControls,
-		NULL,
-		15,
-		maxResults,
-		NULL);
-		
-		free(serverControls[0]->ldctl_value.bv_val);
-		free(serverControls[0]);
-	} else {
-		pSearchResult = ldap_search_init_pageA(
-		pLdapConnection,                     // Session handle
-		distinguishedName,                   // DN to start search
-		scope,                               // Scope
-		ldap_filter,                         // Filter
-		(*attr) ? attr : NULL,               // Retrieve list of attributes
-		0,                                   // Get both attributes and values
-		NULL,
-		NULL,
-		15,
-		maxResults,
-		NULL);
-	}
-    
-    if (pSearchResult == NULL) 
-    {
-        print_ldap_error(LdapGetLastError());
-        BeaconPrintf(CALLBACK_ERROR, "Paging not supported on this server, aborting");
-    }
-    return pSearchResult;
-
 }
 
 void customAttributes(PCHAR pAttribute, PBERVAL pValue)
@@ -338,27 +373,22 @@ void printAttribute(PCHAR pAttribute, PBERVAL *ppValue){
     }
 }
 
-void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count, ULONG scope_of_search, char * hostname, char * domain, BOOL ldaps){
+void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count, ULONG scope_of_search, char * hostname, char * domain, BOOL ldaps, PBERVAL initCookie){
     char szDN[1024] = {0};
 	ULONG ulSize = sizeof(szDN)/sizeof(szDN[0]);
 	
     DWORD dwRet = 0;
     PDOMAIN_CONTROLLER_INFO pdcInfo = NULL;
     LDAP* pLdapConnection = NULL; 
-    PLDAPSearch pPageHandle = NULL;
     PLDAPMessage pSearchResult = NULL;
     char* distinguishedName = NULL;
     char * targetdc = NULL;
     BerElement* pBer = NULL;
     LDAPMessage* pEntry = NULL;
     PCHAR pEntryDN = NULL;
-    LDAP_TIMEVAL timeout = {20, 0};
-    ULONG iCnt = 0;
     PCHAR pAttribute = NULL;
     PBERVAL* ppValue = NULL;
     ULONG results_limit = 0;
-    BOOL isbinary = FALSE;
-    ULONG stat = 0;
     ULONG totalResults = 0;
     ULONG error = NULL;
 
@@ -391,6 +421,11 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
             goto end;
         }
     }
+    if(pdcInfo != NULL)
+    {
+        NetApiBufferFree(pdcInfo);
+        pdcInfo = NULL;
+    }
 
 	//////////////////////////////
 	// Initialise LDAP Session
@@ -402,39 +437,101 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
     if(!pLdapConnection)
         {goto end;}
 
+
 	//////////////////////////////
 	// Perform LDAP Search
 	//////////////////////////////
-	pPageHandle = ExecuteLDAPQuery(pLdapConnection, distinguishedName, ldap_filter, ldap_attributes, results_count, scope_of_search);   
-    if (pPageHandle == NULL)
-        {goto end;}
-    ULONG pagecount = 0;
+    PLDAPControlA serverControls[3] = {0};
+    PLDAPControlA *returnedControls = NULL;
+    LDAP_TIMEVAL timeout = {TIMEOUT, 0};
+    PCHAR attr[MAX_ATTRIBUTES] = {0};
+    InitAttributes(ldap_attributes, attr, serverControls);
+    ULONG returnCode = LDAP_SUCCESS;
+    DWORD numberOfEntries = 0;
+    PBERVAL cookie = NULL;
+    if (initCookie->bv_val != NULL) {
+        cookie = initCookie;
+    }
+    PLDAPMessage message = NULL;
+    BOOL moreResults = TRUE;
+    BOOL done = FALSE;
     do
     {
-        stat = ldap_get_next_page_s(pLdapConnection, pPageHandle, &timeout, (results_count && ((results_count - totalResults) < 64))  ? results_count - totalResults : 64, &pagecount,&pSearchResult );
-        if(!(stat == LDAP_SUCCESS || stat == LDAP_NO_RESULTS_RETURNED))
-            {goto end;}
-
-        if (pSearchResult == NULL) {
-            continue;
+        error = ldap_create_page_control(pLdapConnection, PAGE_SIZE, cookie, FALSE, &serverControls[0]);
+        if (error != LDAP_SUCCESS) {
+            print_ldap_error("ldap_create_page_control", error);
+            goto end;
         }
 
-        //////////////////////////////
-        // Get Search Result Count
-        //////////////////////////////
-        DWORD numberOfEntries = ldap_count_entries(
-                            pLdapConnection,    // Session handle
-                            pSearchResult);     // Search result
-        
-        if(numberOfEntries == -1) // -1 is functions return value when it failed
+    	error = ldap_search_ext_s(
+        	pLdapConnection,                     // Session handle
+        	distinguishedName,                   // DN to start search
+        	scope_of_search,                     // Scope
+        	ldap_filter,                         // Filter
+        	(*attr) ? attr : NULL,               // Retrieve list of attributes
+        	0,                                   // Get both attributes and values
+        	serverControls,
+        	NULL,
+        	&timeout,
+        	results_count,
+        	&message);
+
+        if (error != LDAP_SUCCESS)
         {
-            BeaconPrintf(CALLBACK_ERROR, "Failed to count search results.");
+            print_ldap_error("ldap_search_ext_s", error);
             goto end;
+        }
+
+        error = ldap_parse_result(pLdapConnection, message, &returnCode, NULL, NULL, NULL, &returnedControls, FALSE);
+        if (error != LDAP_SUCCESS) {
+            print_ldap_error("ldap_parse_result", error);
+            goto end;
+        }
+        if (returnCode != LDAP_SUCCESS) {
+            print_ldap_error("LDAP search", returnCode);
+            goto end;
+        }
+
+        if (serverControls[0] != NULL) {
+            ldap_control_free(serverControls[0]);
+            serverControls[0] = NULL;
+        }
+
+        if (cookie != NULL) {
+            ber_bvfree(cookie);
+            cookie = NULL;
+        }
+
+        error = ldap_parse_page_control(pLdapConnection, returnedControls, &numberOfEntries, &cookie);
+        if (error != LDAP_SUCCESS) {
+            print_ldap_error("ldap_parse_page_control", error);
+            goto end;
+        }
+        if (returnedControls != NULL) {
+            ldap_controls_free(returnedControls);
+            returnedControls = NULL;
+        }
+
+        moreResults = cookie != NULL && cookie->bv_val != NULL && cookie->bv_len > 0;
+        if (moreResults) {
+            BeaconPrintf(CALLBACK_OUTPUT, "\n--------------------\n");
+            print_cookie(cookie);
+        }
+
+        if (numberOfEntries == 0) {
+            numberOfEntries = ldap_count_entries(pLdapConnection, message);
+        
+            if(numberOfEntries == -1)
+            {
+                BeaconPrintf(CALLBACK_ERROR, "Failed to count search results.");
+                goto end;
+            }
         }
         
         totalResults += numberOfEntries;
+        done = totalResults >= results_count && results_count != 0;
 
-        for( pEntry = ldap_first_entry(pLdapConnection, pSearchResult); 
+        for( pEntry = ldap_first_entry(pLdapConnection, message); 
              pEntry != NULL; 
              pEntry = ldap_next_entry(pLdapConnection, pEntry))
         {
@@ -452,7 +549,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                 if (ppValue == NULL) {
                     error = LdapGetLastError();
                     if (error != LDAP_SUCCESS) {
-                        print_ldap_error(error);
+                        print_ldap_error("ldap_get_values_lenA", error);
                         goto end;
                     }
                 } else {
@@ -467,7 +564,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
             //pAttribute is NULL, there could have been an error
             error = LdapGetLastError();
             if (error != LDAP_SUCCESS) {
-                print_ldap_error(error);
+                print_ldap_error("pAttribute", error);
                 goto end;
             }
             
@@ -477,18 +574,42 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                 pBer = NULL;
             }
         }
-        if(totalResults >= results_count && results_count != 0)
-        {
-            break;
+
+        if (message != NULL) {
+            ldap_msgfree(message); 
+            message = NULL;
         }
-        ldap_msgfree(pSearchResult); pSearchResult = NULL;
-    }while(stat == LDAP_SUCCESS);
+        break;
+
+    }while(moreResults && !done);
 
     end: 
     BeaconPrintf(CALLBACK_OUTPUT, "\nretrieved %lu results total\n", totalResults);
-    if(pPageHandle)
+    if (ppValue)
     {
-        ldap_search_abandon_page(pLdapConnection, pPageHandle);
+        ldap_value_free_len((PBERVAL *)ppValue);
+        ppValue = NULL;
+    }    
+    if (pAttribute)
+    {
+        ldap_memfree(pAttribute);
+    }
+    if (cookie != NULL) {
+        ber_bvfree(cookie);
+        cookie = NULL;
+    }
+    if (message != NULL) {
+        ldap_msgfree(message);
+        message = NULL;
+    }
+    if (serverControls[0]) ldap_control_free(serverControls[0]);
+    if (serverControls[1]) {
+		free(serverControls[1]->ldctl_value.bv_val);
+		free(serverControls[1]);
+    }
+    if (returnedControls != NULL) {
+        ldap_controls_free(returnedControls);
+        returnedControls = NULL;
     }
     if( pBer != NULL )
     {
@@ -505,20 +626,6 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
         ldap_unbind(pLdapConnection);
         pLdapConnection = NULL;
     }
-    if(pSearchResult)
-    {
-        ldap_msgfree(pSearchResult);
-        pSearchResult = NULL;
-    }
-    if (pAttribute)
-    {
-        ldap_memfree(pAttribute);
-    }
-    if (ppValue)
-    {
-        ldap_value_free_len((PBERVAL *)ppValue);
-        ppValue = NULL;
-    }    
 
 }
 
@@ -535,6 +642,8 @@ extern "C" __declspec(dllexport) void go(const char* Buffer, int Length){
 	ULONG results_count;
     ULONG scope_of_search;
     ULONG ldaps;
+    char * cookie;
+    berval cookie_bv = {0, NULL};
 
 	BeaconDataParse(&parser, (char *)Buffer, Length);
 	ldap_filter = BeaconDataExtract(&parser, NULL);
@@ -544,16 +653,42 @@ extern "C" __declspec(dllexport) void go(const char* Buffer, int Length){
     hostname = BeaconDataExtract(&parser, NULL);
     domain = BeaconDataExtract(&parser, NULL);
     ldaps = BeaconDataInt(&parser);
+    cookie = BeaconDataExtract(&parser, NULL);
 
     ldap_attributes = *ldap_attributes == 0 ? NULL : ldap_attributes;
     hostname = *hostname == 0 ? NULL : hostname;
     domain = *domain == 0 ? NULL : domain;
 
-	ldapSearch(ldap_filter, ldap_attributes, results_count, scope_of_search, hostname, domain, ldaps==1);
+    if (*cookie != 0) {
+        cookie_bv.bv_len = Base64decode_len(cookie);
+        cookie_bv.bv_val = (char *) malloc(cookie_bv.bv_len);
+        if (cookie_bv.bv_val == NULL) {
+            BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
+            return;
+        }
+        Base64decode(cookie_bv.bv_val, cookie);
+    }
 
-    BeaconPrintf(CALLBACK_OUTPUT, "Started");
+    BeaconPrintf(CALLBACK_OUTPUT, "[*] Filter: %s\n",ldap_filter);
+    BeaconPrintf(CALLBACK_OUTPUT, "[*] Scope of search value: %lu\n",scope_of_search);
+
+    if (scope_of_search == 1){
+        scope_of_search = LDAP_SCOPE_BASE;
+    } 
+    else if (scope_of_search == 2){
+        scope_of_search = LDAP_SCOPE_ONELEVEL;
+    }
+    else if (scope_of_search == 3){
+        scope_of_search = LDAP_SCOPE_SUBTREE;
+    }
+
+	ldapSearch(ldap_filter, ldap_attributes, results_count, scope_of_search, hostname, domain, ldaps==1, &cookie_bv);
+
+    if (cookie_bv.bv_val != NULL) {
+        free(cookie_bv.bv_val);
+    }
 }
 
 //A helper macro that will declare main inside the .discard section
 //and invoke BeaconInvokeStandalone with the expected packed argument format  
-BEACON_MAIN("zziizzi", go)
+BEACON_MAIN("zziizziz", go)
