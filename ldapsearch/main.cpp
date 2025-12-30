@@ -15,6 +15,10 @@
 
 #define MAX_ATTRIBUTES 100
 
+void print_ldap_error(ULONG error) {
+    BeaconPrintf(CALLBACK_ERROR, "LDAP error %lu: %s\n", error, ldap_err2string(error));
+}
+
 BOOLEAN _cdecl ServerCertCallback (PLDAP Connection, PCCERT_CONTEXT pServerCert)
 {
 	return TRUE;
@@ -30,29 +34,50 @@ PLDAPControlA FormatSDFlags(int iFlagValue) {
 	// Format and encode the SEQUENCE data in a BerElement.
 	pber = ber_alloc_t(LBER_USE_DER);
 	if(pber==NULL) return NULL;
+
 	pLControl = (PLDAPControl)malloc(sizeof(LDAPControl));
-	if(pLControl==NULL) { ber_free(pber,1); return NULL; }
-	ber_printf(pber,(char *)"{i}",iFlagValue);
+	if(pLControl==NULL) { 
+        BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
+        goto FormatSDFlags_error;
+    }
+	success = ber_printf(pber,(char *)"{i}",iFlagValue);
+    if (success == -1) {
+        BeaconPrintf(CALLBACK_ERROR, "ber_printf failed!\n");
+        goto FormatSDFlags_error;
+    }
 	
 	// Transfer the encoded data into a BERVAL.
 	success = ber_flatten(pber,&pldctrl_value);
-	if(success == 0)
+	if(success == 0) {
 		ber_free(pber,1);
-	else {
-		BeaconPrintf(CALLBACK_ERROR, "ber_flatten failed!");
-		// Call error handler here.
+        pber = NULL;
+    } else {
+		BeaconPrintf(CALLBACK_ERROR, "ber_flatten failed!\n");
+        goto FormatSDFlags_error;
 	}
 	// Copy the BERVAL data to the LDAPControl structure.
 	pLControl->ldctl_oid = (char *) "1.2.840.113556.1.4.801";
 	pLControl->ldctl_iscritical = TRUE;
 	pLControl->ldctl_value.bv_val = (char*)malloc((size_t)pldctrl_value->bv_len);
+    if (pLControl->ldctl_value.bv_val == NULL) {
+        BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
+        goto FormatSDFlags_error;
+    }
 	memcpy(pLControl->ldctl_value.bv_val, pldctrl_value->bv_val, pldctrl_value->bv_len);
 	pLControl->ldctl_value.bv_len = pldctrl_value->bv_len;
 	
 	// Cleanup temporary berval.
 	ber_bvfree(pldctrl_value);
+    pldctrl_value = NULL;
 	// Return the formatted LDAPControl data.
 	return pLControl;
+
+    // Error handler
+    FormatSDFlags_error:
+    if (pber != NULL) ber_free(pber, 1);
+    if (pLControl != NULL) free(pLControl);
+    return NULL;
+    
 }
 
 // https://opensource.apple.com/source/QuickTimeStreamingServer/QuickTimeStreamingServer-452/CommonUtilitiesLib/base64.c.auto.html
@@ -94,54 +119,55 @@ LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName, BOOL lda
 	LDAP* pLdapConnection = NULL;
 
     ULONG result;
-    int portNumber = ldaps == TRUE ? 636 : 389;
+    int portNumber = ldaps ? 636 : 389;
 
     pLdapConnection = ldap_init(hostName, portNumber);
-
-    if(ldaps == TRUE){
-
-        ULONG version = LDAP_VERSION3;
-        result = ldap_set_optionW(pLdapConnection, LDAP_OPT_VERSION, (void*)&version);
-    
-        ldap_get_optionW(pLdapConnection, LDAP_OPT_SSL, &result);  //LDAP_OPT_SSL
-        if (result == 0){
-            ldap_set_optionW(pLdapConnection, LDAP_OPT_SSL, LDAP_OPT_ON);
-        }
-
-        ldap_get_optionW(pLdapConnection, LDAP_OPT_SIGN, &result);  //LDAP_OPT_SIGN
-        if (result == 0){
-            ldap_set_optionW(pLdapConnection, LDAP_OPT_SIGN, LDAP_OPT_ON);
-        }
-
-        ldap_get_optionW(pLdapConnection, LDAP_OPT_ENCRYPT, &result);  //LDAP_OPT_ENCRYPT
-        if (result == 0){
-            ldap_set_optionW(pLdapConnection, LDAP_OPT_ENCRYPT, LDAP_OPT_ON);
-        }
-
-        ldap_set_optionW(pLdapConnection, LDAP_OPT_SERVER_CERTIFICATE, (void*)&ServerCertCallback ); //LDAP_OPT_SERVER_CERTIFICATE
-	}
-    
     if (pLdapConnection == NULL)
     {
+        print_ldap_error(LdapGetLastError());
       	BeaconPrintf(CALLBACK_ERROR,"Failed to establish LDAP connection on %d.", portNumber);
         return NULL;
     }
-    //ldap_set_optionA(pLdapConnection, LDAP_OPT_VERSION,&Version );
 
+    if(ldaps){
+
+        ULONG version = LDAP_VERSION3;
+
+        result = ldap_set_optionW(pLdapConnection, LDAP_OPT_VERSION, (void*)&version);
+        if (result != LDAP_SUCCESS){goto handle_set_error;}
+
+        result = ldap_set_optionW(pLdapConnection, LDAP_OPT_SSL, LDAP_OPT_ON);
+        if (result != LDAP_SUCCESS){goto handle_set_error;}
+
+        result = ldap_set_optionW(pLdapConnection, LDAP_OPT_SIGN, LDAP_OPT_ON);
+        if (result != LDAP_SUCCESS){goto handle_set_error;}
+
+        result = ldap_set_optionW(pLdapConnection, LDAP_OPT_ENCRYPT, LDAP_OPT_ON);
+        if (result != LDAP_SUCCESS){goto handle_set_error;}
+
+        result = ldap_set_optionW(pLdapConnection, LDAP_OPT_SERVER_CERTIFICATE, (void*)&ServerCertCallback ); //LDAP_OPT_SERVER_CERTIFICATE
+        if (result != LDAP_SUCCESS) {
+            handle_set_error:
+            BeaconPrintf(CALLBACK_ERROR, "LDAPS connection failed\n");
+            print_ldap_error(result);
+            ldap_unbind(pLdapConnection);
+            return NULL;
+        }
+	}
+    
 	//////////////////////////////
 	// Bind to DC
 	//////////////////////////////
-    ULONG lRtn = 0;
-
-    lRtn = ldap_bind_s(
+    result = ldap_bind_s(
                 pLdapConnection,      // Session Handle
                 distinguishedName,    // Domain DN
                 NULL,                 // Credential structure
                 LDAP_AUTH_NEGOTIATE); // Auth mode
 
-    if(lRtn != LDAP_SUCCESS)
+    if(result != LDAP_SUCCESS)
     {
-    	BeaconPrintf(CALLBACK_ERROR, "Bind Failed: %lu", lRtn);
+    	BeaconPrintf(CALLBACK_ERROR, "Bind Failed\n");
+        print_ldap_error(result);
         ldap_unbind(pLdapConnection);
         pLdapConnection = NULL; 
     }
@@ -232,6 +258,7 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
     
     if (pSearchResult == NULL) 
     {
+        print_ldap_error(LdapGetLastError());
         BeaconPrintf(CALLBACK_ERROR, "Paging not supported on this server, aborting");
     }
     return pSearchResult;
@@ -243,7 +270,11 @@ void customAttributes(PCHAR pAttribute, PBERVAL pValue)
     if(strcmp(pAttribute, "objectGUID") == 0) 
     {
         RPC_CSTR G = NULL;
-        UuidToStringA((UUID *) pValue->bv_val, &G);
+        RPC_STATUS status = UuidToStringA((UUID *) pValue->bv_val, &G);
+        if (status != RPC_S_OK) {
+            BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
+            return;
+        }
         BeaconPrintf(CALLBACK_OUTPUT, "%s", G);
         RpcStringFreeA(&G);
     } else if ( strcmp(pAttribute, "attributeSecurityGUID") == 0 
@@ -268,6 +299,10 @@ void customAttributes(PCHAR pAttribute, PBERVAL pValue)
 		char *encoded = NULL;
 		ULONG len = pValue->bv_len;
 		encoded = (char *)malloc((size_t)len*2);
+        if (encoded == NULL) {
+            BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
+            return;
+        }
 		Base64encode(encoded, (char *)pValue->bv_val, len);
 		BeaconPrintf(CALLBACK_OUTPUT, "%s", encoded);
 		free(encoded);
@@ -275,9 +310,13 @@ void customAttributes(PCHAR pAttribute, PBERVAL pValue)
     else if(strcmp(pAttribute, "objectSid") == 0 || strcmp(pAttribute, "securityIdentifier") == 0)
     {
         LPSTR sid = NULL;
-        ConvertSidToStringSidA((PSID)pValue->bv_val, &sid);
+        BOOL success = ConvertSidToStringSidA((PSID)pValue->bv_val, &sid);
+        if (!success) {
+            BeaconPrintf(CALLBACK_ERROR, "Converting SID to string failed\n");
+            return;
+        }
         BeaconPrintf(CALLBACK_OUTPUT, "%s", sid);
-        LocalFree(sid);
+        if (sid != NULL) LocalFree(sid);
     }
     else
     {
@@ -297,10 +336,6 @@ void printAttribute(PCHAR pAttribute, PBERVAL *ppValue){
         customAttributes(pAttribute, *ppValue);
         ppValue++;
     }
-}
-
-void print_ldap_error(ULONG error) {
-    BeaconPrintf(CALLBACK_ERROR, "LDAP error %lu: %s\n", error, ldap_err2string(error));
 }
 
 void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count, ULONG scope_of_search, char * hostname, char * domain, BOOL ldaps){
