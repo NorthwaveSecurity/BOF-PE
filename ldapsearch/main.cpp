@@ -248,7 +248,22 @@ void customAttributes(PCHAR pAttribute, PCHAR pValue)
         UuidToStringA((UUID *) tmp->bv_val, &G);
         BeaconPrintf(CALLBACK_OUTPUT, "%s", G);
         RpcStringFreeA(&G);
-    } else if (strcmp(pAttribute, "pKIExpirationPeriod") == 0 || strcmp(pAttribute, "pKIOverlapPeriod") == 0 || strcmp(pAttribute, "cACertificate") == 0 || strcmp(pAttribute, "nTSecurityDescriptor") == 0 || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 || strcmp(pAttribute, "msDS-GenerationId") == 0 || strcmp(pAttribute, "auditingPolicy") == 0 || strcmp(pAttribute, "dSASignature") == 0 || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 || strcmp(pAttribute, "logonHours") == 0 || strcmp(pAttribute, "schemaIDGUID") == 0 || strcmp(pAttribute, "mSMQDigests") == 0 || strcmp(pAttribute, "mSMQSignCertificates") == 0 || strcmp(pAttribute, "userCertificate") == 0 || strcmp(pAttribute, "attributeSecurityGUID") == 0  ) {
+    } else if (strcmp(pAttribute, "pKIExpirationPeriod") == 0 
+            || strcmp(pAttribute, "pKIOverlapPeriod") == 0 
+            || strcmp(pAttribute, "cACertificate") == 0 
+            || strcmp(pAttribute, "nTSecurityDescriptor") == 0 
+            || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 
+            || strcmp(pAttribute, "msDS-GenerationId") == 0 
+            || strcmp(pAttribute, "auditingPolicy") == 0 
+            || strcmp(pAttribute, "dSASignature") == 0 
+            || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 
+            || strcmp(pAttribute, "logonHours") == 0 
+            || strcmp(pAttribute, "schemaIDGUID") == 0 
+            || strcmp(pAttribute, "mSMQDigests") == 0 
+            || strcmp(pAttribute, "mSMQSignCertificates") == 0 
+            || strcmp(pAttribute, "userCertificate") == 0 
+            || strcmp(pAttribute, "attributeSecurityGUID") == 0  
+    ) {
 		char *encoded = NULL;
 		PBERVAL tmp = (PBERVAL)pValue;
 		ULONG len = tmp->bv_len;
@@ -285,17 +300,21 @@ void printAttribute(PCHAR pAttribute, PCHAR* ppValue){
     }
 }
 
+void print_ldap_error(ULONG error) {
+    BeaconPrintf(CALLBACK_ERROR, "LDAP error %lu: %s\n", error, ldap_err2string(error));
+}
+
 void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count, ULONG scope_of_search, char * hostname, char * domain, BOOL ldaps){
     char szDN[1024] = {0};
 	ULONG ulSize = sizeof(szDN)/sizeof(szDN[0]);
 	
-    BOOL res = (domain) ? TRUE : GetUserNameExA(NameFullyQualifiedDN, szDN, &ulSize);
     DWORD dwRet = 0;
     PDOMAIN_CONTROLLER_INFO pdcInfo = NULL;
     LDAP* pLdapConnection = NULL; 
     PLDAPSearch pPageHandle = NULL;
     PLDAPMessage pSearchResult = NULL;
     char* distinguishedName = NULL;
+    char * targetdc = NULL;
     BerElement* pBer = NULL;
     LDAPMessage* pEntry = NULL;
     PCHAR pEntryDN = NULL;
@@ -307,37 +326,42 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
     BOOL isbinary = FALSE;
     ULONG stat = 0;
     ULONG totalResults = 0;
+    ULONG error = NULL;
 
-	distinguishedName = (domain) ? domain : strstr(szDN, "DC=");
-	if(distinguishedName != NULL && res) {
-    	BeaconPrintf(CALLBACK_OUTPUT, "[*] Distinguished name: %s\n", distinguishedName);	
-	}
-	else{
-		BeaconPrintf(CALLBACK_ERROR, "Failed to retrieve distinguished name.");
-        return;
-
-	}
+    if (domain) {
+        distinguishedName = domain;
+    } else {
+        BOOL res = GetUserNameExA(NameFullyQualifiedDN, szDN, &ulSize);
+        if (res) {
+        	distinguishedName = strstr(szDN, "DC=");
+        } else {
+    		BeaconPrintf(CALLBACK_ERROR, "Failed to retrieve distinguished name.");
+            goto end;
+        }
+    }
+	BeaconPrintf(CALLBACK_OUTPUT, "[*] Distinguished name: %s\n", distinguishedName);	
 
 	////////////////////////////
 	// Retrieve PDC
 	////////////////////////////
     
-    dwRet = DsGetDcNameA(NULL, NULL, NULL, NULL, 0, &pdcInfo);
-    if (ERROR_SUCCESS == dwRet || hostname) {
-        if(!hostname){
-            BeaconPrintf(CALLBACK_OUTPUT, "[*] targeting DC: %s\n", pdcInfo->DomainControllerName);       
-        }
-    } else {
-        BeaconPrintf(CALLBACK_ERROR, "Failed to identify PDC, are we domain joined?");
-        goto end;
-    }
 
+    if (hostname) {
+        targetdc = hostname;
+    } else {
+        dwRet = DsGetDcNameA(NULL, NULL, NULL, NULL, 0, &pdcInfo);
+        if (ERROR_SUCCESS == dwRet) {
+            targetdc = pdcInfo->DomainControllerName + 2;
+        } else {
+            BeaconPrintf(CALLBACK_ERROR, "Failed to identify PDC, are we domain joined?");
+            goto end;
+        }
+    }
 
 	//////////////////////////////
 	// Initialise LDAP Session
     // Taken from https://docs.microsoft.com/en-us/previous-versions/windows/desktop/ldap/searching-a-directory
 	//////////////////////////////
-    char * targetdc = (hostname == NULL) ? pdcInfo->DomainControllerName + 2: hostname;
     BeaconPrintf(CALLBACK_OUTPUT, "[*] Binding to %s\n", targetdc);
     pLdapConnection = InitialiseLDAPConnection(targetdc, distinguishedName, ldaps);
 
@@ -348,12 +372,18 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
 	// Perform LDAP Search
 	//////////////////////////////
 	pPageHandle = ExecuteLDAPQuery(pLdapConnection, distinguishedName, ldap_filter, ldap_attributes, results_count, scope_of_search);   
+    if (pPageHandle == NULL)
+        {goto end;}
     ULONG pagecount = 0;
     do
     {
         stat = ldap_get_next_page_s(pLdapConnection, pPageHandle, &timeout, (results_count && ((results_count - totalResults) < 64))  ? results_count - totalResults : 64, &pagecount,&pSearchResult );
-        if(!pSearchResult || ! (stat == LDAP_SUCCESS || stat == LDAP_NO_RESULTS_RETURNED))
+        if(!(stat == LDAP_SUCCESS || stat == LDAP_NO_RESULTS_RETURNED))
             {goto end;}
+
+        if (pSearchResult == NULL) {
+            continue;
+        }
 
         //////////////////////////////
         // Get Search Result Count
@@ -367,43 +397,44 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
             BeaconPrintf(CALLBACK_ERROR, "Failed to count search results.");
             goto end;
         }
-        else if(!numberOfEntries)
-        {
-            BeaconPrintf(CALLBACK_ERROR, "Search returned zero results");
-            goto end;
-        }    
         
         totalResults += numberOfEntries;
 
-
-        for( iCnt=0; iCnt < numberOfEntries; iCnt++ )
+        for( pEntry = ldap_first_entry(pLdapConnection, pSearchResult); 
+             pEntry != NULL; 
+             pEntry = ldap_next_entry(pLdapConnection, pEntry))
         {
             BeaconPrintf(CALLBACK_OUTPUT, "\n--------------------");
 
-            // Get the first/next entry.
-            if( !iCnt )
-                {pEntry = ldap_first_entry(pLdapConnection, pSearchResult);}
-            else
-                {pEntry = ldap_next_entry(pLdapConnection, pEntry);}
-            
-            if( pEntry == NULL )
-            {
-                break;
-            }
-                    
-            // Get the first attribute name.
-            pAttribute = ldap_first_attribute(
-                        pLdapConnection,   // Session handle
-                        pEntry,            // Current entry
-                        &pBer);            // [out] Current BerElement
-            
             // Output the attribute names for the current object
             // and output values.
-            while(pAttribute != NULL)
+            for (
+                pAttribute = ldap_first_attribute(pLdapConnection, pEntry, &pBer);         
+                pAttribute != NULL;
+                pAttribute = ldap_next_attribute(pLdapConnection, pEntry, pBer)           
+            )
             {
                 isbinary = FALSE;
                 // Get the string values.
-                if(strcmp(pAttribute, "pKIExpirationPeriod") == 0 || strcmp(pAttribute, "pKIOverlapPeriod") == 0 || strcmp(pAttribute, "cACertificate") == 0 || strcmp(pAttribute, "objectSid") == 0 || strcmp(pAttribute, "securityIdentifier") == 0 || strcmp(pAttribute, "objectGUID") == 0 || strcmp(pAttribute, "nTSecurityDescriptor") == 0 || strcmp(pAttribute, "msDS-GenerationId") == 0 || strcmp(pAttribute, "auditingPolicy") == 0 || strcmp(pAttribute, "dSASignature") == 0 || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 || strcmp(pAttribute, "logonHours") == 0 || strcmp(pAttribute, "schemaIDGUID") == 0 || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 || strcmp(pAttribute, "msDS-GenerationId") == 0 || strcmp(pAttribute, "mSMQDigests") == 0 || strcmp(pAttribute, "mSMQSignCertificates") == 0 || strcmp(pAttribute, "userCertificate") == 0 || strcmp(pAttribute, "attributeSecurityGUID") == 0  )
+                if(strcmp(pAttribute, "pKIExpirationPeriod") == 0 
+                || strcmp(pAttribute, "pKIOverlapPeriod") == 0 
+                || strcmp(pAttribute, "cACertificate") == 0 
+                || strcmp(pAttribute, "objectSid") == 0 
+                || strcmp(pAttribute, "securityIdentifier") == 0 
+                || strcmp(pAttribute, "objectGUID") == 0 
+                || strcmp(pAttribute, "nTSecurityDescriptor") == 0 
+                || strcmp(pAttribute, "msDS-GenerationId") == 0 
+                || strcmp(pAttribute, "auditingPolicy") == 0 
+                || strcmp(pAttribute, "dSASignature") == 0 
+                || strcmp(pAttribute, "mS-DS-CreatorSID") == 0 
+                || strcmp(pAttribute, "logonHours") == 0 
+                || strcmp(pAttribute, "schemaIDGUID") == 0 
+                || strcmp(pAttribute, "msDS-AllowedToActOnBehalfOfOtherIdentity") == 0 
+                || strcmp(pAttribute, "msDS-GenerationId") == 0 
+                || strcmp(pAttribute, "mSMQDigests") == 0 
+                || strcmp(pAttribute, "mSMQSignCertificates") == 0 
+                || strcmp(pAttribute, "userCertificate") == 0 
+                || strcmp(pAttribute, "attributeSecurityGUID") == 0  )
                 {
 					//BeaconPrintf(CALLBACK_OUTPUT, "\n%s\n", pAttribute);
                     ppValue = (char **)ldap_get_values_lenA(pLdapConnection, pEntry, pAttribute); //not really a char **
@@ -414,11 +445,13 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                                 pEntry,           // Current entry
                                 pAttribute);      // Current attribute
                 }
-
-
-                // Use and Free memory.
-                if(ppValue != NULL)  
-                {
+                if (ppValue == NULL) {
+                    error = LdapGetLastError();
+                    if (error != LDAP_SUCCESS) {
+                        print_ldap_error(error);
+                        goto end;
+                    }
+                } else {
                     printAttribute(pAttribute, ppValue);
                     if(isbinary)
                     {ldap_value_free_len((PBERVAL *)ppValue);}
@@ -428,11 +461,13 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                 }
                 ldap_memfree(pAttribute);
                 
-                // Get next attribute name.
-                pAttribute = ldap_next_attribute(
-                    pLdapConnection,   // Session Handle
-                    pEntry,            // Current entry
-                    pBer);             // Current BerElement
+            }
+
+            //pAttribute is NULL, there could have been an error
+            error = LdapGetLastError();
+            if (error != LDAP_SUCCESS) {
+                print_ldap_error(error);
+                goto end;
             }
             
             if( pBer != NULL )
@@ -474,9 +509,16 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
         ldap_msgfree(pSearchResult);
         pSearchResult = NULL;
     }
+    if (pAttribute)
+    {
+        ldap_memfree(pAttribute);
+    }
     if (ppValue)
     {
-        ldap_value_free(ppValue);
+        if(isbinary)
+        {ldap_value_free_len((PBERVAL *)ppValue);}
+        else
+        {ldap_value_free(ppValue);}
         ppValue = NULL;
     }    
 
