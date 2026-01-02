@@ -178,7 +178,9 @@ cd ..
 
 ### Clang
 
-A Linux Docker image has been created to leverage Clang.  Check out the `.github/workflow` folder for examples on how to cross compile for Windows using Clang targeting msvc runtime.
+A Linux Docker image has been created to leverage Clang. Use the provided Makefile to perform automatic compilation.
+
+For the manual process, check out the `.github/workflow` folder for examples on how to cross compile for Windows using Clang targeting msvc runtime.
 
 Once compilation has finished, all binaries should be present in the dist folder.
 

@@ -12,6 +12,8 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
     set(LINK_SCRIPT ${CMAKE_SOURCE_DIR}/link32.ld)
 endif()
 
+add_compile_definitions("DEBUG=${DEBUG}")
+
 include_directories(${CMAKE_SOURCE_DIR}/beacon/)
 
 add_subdirectory(beacon)

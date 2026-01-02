@@ -203,12 +203,18 @@ BEACON_IMPEX int BeaconInvokeStandalone(int argc, const char* argv[], const char
     #define BEACON_INIT if(__beacon_init_crt) __scrt_initialize_crt(1)
 #endif
 
+#ifdef DEBUG
+    #define INVOKE_STANDALONE(entry) BeaconInvokeStandalone(argc, argv, arg_fmt, entry)
+#else
+    #define INVOKE_STANDALONE(entry) 1
+#endif
+
 #define BEACON_MAIN(fmt, entry) \
     bool __beacon_init_crt = true; \
     const char BEACON_DISCARD_DATA arg_fmt[] = fmt; \
     BEACON_DISCARD int main(int argc, const char* argv[]) { \
         __beacon_init_crt = false; \
-        return BeaconInvokeStandalone(argc, argv, arg_fmt, entry); \
+        return INVOKE_STANDALONE(entry); \
     }
 
     extern bool __beacon_init_crt;
