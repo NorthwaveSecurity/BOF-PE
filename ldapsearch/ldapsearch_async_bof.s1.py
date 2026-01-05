@@ -86,5 +86,5 @@ class LDAPSearchAsyncBOF(BaseBOFTask):
         ]
 
     def validate_binary_content(self, arguments: List[str]):
-        if self._implant.get_arch() != ImplantArch.INTEL_X64:
-            raise TaskInvalidArgumentsException(f"This BOF currently only supports X64 architecture.")
+        if self._implant.get_arch() not in [ImplantArch.INTEL_X64, ImplantArch.INTEL_X86]:
+            raise TaskInvalidArgumentsException(f"This BOF currently only supports X86 and X64 architectures.")

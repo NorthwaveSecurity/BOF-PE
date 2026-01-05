@@ -17,3 +17,4 @@ else()
     target_link_options(${EXE_NAME} PRIVATE -fno-unwind-tables -fno-asynchronous-unwind-tables -falign-functions=1 -fno-exceptions -fno-rtti -T${LINK_SCRIPT} -Wl,--strip-all)
 endif()
 
+install(PROGRAMS ${EXE_NAME}_async_bof.s1.py TYPE BIN)
