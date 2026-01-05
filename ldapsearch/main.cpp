@@ -237,6 +237,8 @@ void customAttributes(PCHAR pAttribute, PBERVAL pValue)
              || strcmp(pAttribute, "pKIOverlapPeriod") == 0 
              || strcmp(pAttribute, "schemaIDGUID") == 0 
              || strcmp(pAttribute, "userCertificate") == 0
+             || strcmp(pAttribute, "mS-DS-ConsistencyGuid") == 0
+             || strcmp(pAttribute, "msExchSafeSendersHash") == 0
     ) {
 		char *encoded = NULL;
 		ULONG len = pValue->bv_len;
