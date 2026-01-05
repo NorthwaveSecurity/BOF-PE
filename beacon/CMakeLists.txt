@@ -1,5 +1,8 @@
+if (DEBUG) 
+    set(STANDALONE ../common/standalone.cpp ../common/standalone.h)
+endif ()
 
-add_library(beacon SHARED beacon.cpp beacon.h ../common/standalone.cpp ../common/standalone.h)
+add_library(beacon SHARED beacon.cpp beacon.h ${STANDALONE})
 set_target_properties(beacon PROPERTIES PREFIX "")
 set_target_properties(beacon PROPERTIES OUTPUT_NAME beacon)
 target_compile_definitions(beacon PRIVATE -DBUILD_BEACON)

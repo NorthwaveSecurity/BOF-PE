@@ -255,21 +255,28 @@ extern "C" BEACON_IMPEX BOOL toWideChar(char* src, wchar_t* dst, int max) {
     return MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, src, -1, dst, max / sizeof(wchar_t));
 }
 
-int GetPackedArguments(int argc, const char* argv[], const char* bof_args_def, std::string& result);
+#ifdef DEBUG
+    int GetPackedArguments(int argc, const char* argv[], const char* bof_args_def, std::string& result);
 
-extern "C" BEACON_IMPEX int BeaconInvokeStandalone(int argc, const char* argv[], const char* bof_args_def, BeaconEntryPtr entry){
+    extern "C" BEACON_IMPEX int BeaconInvokeStandalone(int argc, const char* argv[], const char* bof_args_def, BeaconEntryPtr entry){
 
-    if(argc <= 0 || argv == nullptr){
-        entry(nullptr, 0);
+        if(argc <= 0 || argv == nullptr){
+            entry(nullptr, 0);
+            return 0;
+        }else{
+
+            std::string packed_args;
+            if(GetPackedArguments(argc, argv, bof_args_def, packed_args) >= 0)
+                entry(packed_args.c_str(), packed_args.length());
+        }
+
         return 0;
-    }else{
-
-        std::string packed_args;
-        if(GetPackedArguments(argc, argv, bof_args_def, packed_args) >= 0)
-            entry(packed_args.c_str(), packed_args.length());
     }
+#endif
 
-    return 0;
+extern "C" BEACON_IMPEX void BeaconWakeup(){
+    /* Has no function when running outside of a Beacon */
+    return;
 }
 
 #endif

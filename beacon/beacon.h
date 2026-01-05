@@ -185,8 +185,6 @@ BEACON_IMPEX char * BeaconGetCustomUserData();
 
 typedef void (*BeaconEntryPtr)(const char* data, int len);
 
-BEACON_IMPEX int BeaconInvokeStandalone(int argc, const char* argv[], const char* bof_args_def, BeaconEntryPtr entry);
-
 #if !defined(_MSC_VER) && !defined(__clang__)
     #define BEACON_DISCARD __attribute__((section(".discard")))
     #define BEACON_DISCARD_DATA __attribute__((section(".discard_data")))
@@ -204,6 +202,7 @@ BEACON_IMPEX int BeaconInvokeStandalone(int argc, const char* argv[], const char
 #endif
 
 #ifdef DEBUG
+    BEACON_IMPEX int BeaconInvokeStandalone(int argc, const char* argv[], const char* bof_args_def, BeaconEntryPtr entry);
     #define INVOKE_STANDALONE(entry) BeaconInvokeStandalone(argc, argv, arg_fmt, entry)
 #else
     #define INVOKE_STANDALONE(entry) 1
