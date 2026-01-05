@@ -13,7 +13,7 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif()
 
 if (DEBUG)
-add_compile_definitions("DEBUG=${DEBUG}")
+    add_compile_definitions("DEBUG=${DEBUG}")
 endif ()
 
 include_directories(${CMAKE_SOURCE_DIR}/beacon/)
@@ -21,4 +21,6 @@ include_directories(${CMAKE_SOURCE_DIR}/beacon/)
 add_subdirectory(beacon)
 add_subdirectory(ldapsearch)
 
-install(TARGETS beacon ldapsearch DESTINATION "")
+if (DEBUG)
+    install(TARGETS beacon)
+endif()
