@@ -1,5 +1,13 @@
 # BOF-PE
 
+Based on [NetSPI/BOF-PE](https://github.com/NetSPI/BOF-PE). Our changes towards the upstream are as follows:
+
+* We primarily target Outflank C2, which does not ignore the `.discard` and `.discard_data` sections. Therefore, we changed the compilation process to ensure that the `BeaconInvokeStandalone` function is only included in the binary when compiled with the `DEBUG=1` flag.
+* Stage1 expects BOFs to use the format `<name>.<arch>.o`. Therefore we changed the compilation process to output this format in `DEBUG=0` builds.
+* We added new BOFs. Notably:
+    * A rewrite of the [ldapsearch BOF from TrustedSec](https://github.com/trustedsec/CS-Situational-Awareness-BOF/blob/master/src/SA/ldapsearch/entry.c) to include more error handling and flexibility. This has resolved some crashes with this BOF on our end.
+* We removed example implementations. Please refer to the upstream for templates and examples.
+
 ## Description
 Beacon Object File (BOF) support has been at the cornerstone of capability for any modern C2 platform since its inception by Cobalt Strike 4.1 back in 2020. It was a major step forward towards integrating a modular and extensible design whilst still being able to interact with the C2 platform itself via the Beacon API.
 
@@ -7,7 +15,7 @@ After five years of development using this approach, cracks in the design have b
 
 Well, this proposal will hopefully allow just that. In this article, I propose a reference design for a new BOF portable executable (PE) concept that will hopefully solve some of the current constraints and issues faced by BOF developers. Features include:
 
-*	The ability to run the same linked EXE standalone or within a C2 environment
+*	The ability to run the same source code standalone or within a C2 environment
 *	Full support for C++ and exceptions are possible
 *	Symbol resolution issues disappear 
 *	Code will be easier to maintain vs the traditional BOF design
@@ -32,9 +40,9 @@ The BOF PE design will allow execution of the fully linked PE using a beacon com
 ```
 c:\bofs\mybof.exe "String arg" 12345 c:\files\binary.bin
 ```
-The same EXE file could be used for execution within the C2 environment.
+The same source code could after a release build be used for execution within the C2 environment.
 ```
-bof-pe c:\bofs\mybof.exe "String arg" 12345 c:\files\binary.bin
+bof-pe c:\bofs\mybof.x64.o "String arg" 12345 c:\files\binary.bin
 ```
 
 This functionality would be implemented by a new beacon API which I have named `BeaconInvokeStandalone` which could be called from the program's main function.
