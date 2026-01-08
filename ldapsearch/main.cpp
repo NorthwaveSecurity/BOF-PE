@@ -86,6 +86,11 @@ PLDAPControlA FormatSDFlags(int iFlagValue) {
 static const char basis_64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+size_t Base64encode_len(int len)
+{
+    return ((len + 2) / 3 * 4) + 1;
+}
+
 int Base64encode(char* encoded, const char* string, int len) {
 	int i;
 	char* p;
@@ -240,14 +245,12 @@ void customAttributes(PCHAR pAttribute, PBERVAL pValue)
              || strcmp(pAttribute, "mS-DS-ConsistencyGuid") == 0
              || strcmp(pAttribute, "msExchSafeSendersHash") == 0
     ) {
-		char *encoded = NULL;
-		ULONG len = pValue->bv_len;
-		encoded = (char *)malloc((size_t)len*2);
+		char *encoded = (char *)malloc(Base64encode_len(pValue->bv_len));
         if (encoded == NULL) {
             BeaconPrintf(CALLBACK_ERROR, "Out of memory\n");
             return;
         }
-		Base64encode(encoded, (char *)pValue->bv_val, len);
+		Base64encode(encoded, (char *)pValue->bv_val, pValue->bv_len);
 		BeaconPrintf(CALLBACK_OUTPUT, "%s", encoded);
 		free(encoded);
 	}
