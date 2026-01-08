@@ -20,8 +20,8 @@ class LDAPSearchAsyncBOF(BaseBOFTask):
 
         self.parser.add_argument(
             "attributes",
-            default="",
-            help='Comma seperated attributes ("" = all).',
+            default="*,ntSecurityDescriptor",
+            help='Comma seperated attributes ("" = all) (default = "*,ntSecurityDescriptor").',
             nargs="?",
         )
 
@@ -61,12 +61,12 @@ class LDAPSearchAsyncBOF(BaseBOFTask):
             "instead (it has the same arguments).\n\n"
             "Example usage:\n"
             "  - Query single user/pc/group:\n"
-            "    ldapsearch (samAccountName=COMPUTERNAME_OR_USERNAME$)\n"
+            "    ldapsearch_async (samAccountName=COMPUTERNAME_OR_USERNAME$)\n"
             "  - Query AS-REP roastable users:\n"
-            "    ldapsearch (&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))\n"
+            "    ldapsearch_async (&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))\n"
             "\n"
-            "Important - To add in ACLs so Bloodhound can draw relationships between objects (see external BofHound tool), add nTSecurityDescriptor in the attributes list, like so:\n"
-            "ldapsearch <query> *,ntsecuritydescriptor"
+            "Important - To add in ACLs so Bloodhound can draw relationships between objects (see external BofHound tool), ensure nTSecurityDescriptor in the attributes list (which it is by default), like so:\n"
+            "ldapsearch_async <query> *,ntsecuritydescriptor"
         )
 
     def split_arguments(self, arguments: Optional[str], strip_quotes: bool = False) -> List[str]:
@@ -84,7 +84,3 @@ class LDAPSearchAsyncBOF(BaseBOFTask):
             (BOFArgumentEncoding.STR, parser_arguments.dn),
             (BOFArgumentEncoding.INT, int(parser_arguments.ldaps)),
         ]
-
-    def validate_binary_content(self, arguments: List[str]):
-        if self._implant.get_arch() not in [ImplantArch.INTEL_X64, ImplantArch.INTEL_X86]:
-            raise TaskInvalidArgumentsException(f"This BOF currently only supports X86 and X64 architectures.")
