@@ -14,7 +14,7 @@ CONVERSION_TABLE = {
 
 class LDAPSearchAsyncBOF(BaseBOFTask):
     def __init__(self):
-        super().__init__("ldapsearch_async", base_binary_name="ldapsearch", bof_type=BOFType.ASYNC)
+        super().__init__("ldapsearch_nw", base_binary_name="ldapsearch")
 
         self.parser.add_argument("query", help="The query to perform.")
 
@@ -61,12 +61,12 @@ class LDAPSearchAsyncBOF(BaseBOFTask):
             "instead (it has the same arguments).\n\n"
             "Example usage:\n"
             "  - Query single user/pc/group:\n"
-            "    ldapsearch_async (samAccountName=COMPUTERNAME_OR_USERNAME$)\n"
+            "    ldapsearch_nw (samAccountName=COMPUTERNAME_OR_USERNAME$)\n"
             "  - Query AS-REP roastable users:\n"
-            "    ldapsearch_async (&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))\n"
+            "    ldapsearch_nw (&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))\n"
             "\n"
             "Important - To add in ACLs so Bloodhound can draw relationships between objects (see external BofHound tool), ensure nTSecurityDescriptor in the attributes list (which it is by default), like so:\n"
-            "ldapsearch_async <query> *,ntsecuritydescriptor"
+            "ldapsearch_nw <query> *,ntsecuritydescriptor"
         )
 
     def split_arguments(self, arguments: Optional[str], strip_quotes: bool = False) -> List[str]:
